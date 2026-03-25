@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "XHS 一键收藏到飞书",
+  "version": "0.2.0",
+  "description": "把当前小红书笔记一键收藏到飞书多维表。",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://open.feishu.cn/*",
+    "https://www.xiaohongshu.com/*",
+    "https://*.xiaohongshu.com/*",
+    "https://xhslink.com/*",
+    "https://*.xhscdn.com/*",
+    "https://ci.xiaohongshu.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.xiaohongshu.com/*",
+        "https://xhslink.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "收藏到飞书"
+  }
+}

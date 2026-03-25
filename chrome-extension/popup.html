@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XHS 一键收藏到飞书</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="app">
+      <section class="hero">
+        <p class="eyebrow">Xiaohongshu to Feishu</p>
+        <h1>一键收藏当前笔记</h1>
+        <p class="subtitle">开箱即用，提取小红书笔记图片及视频，直接写入飞书多维表格。</p>
+      </section>
+
+      <section class="panel">
+        <div class="field">
+          <label for="feishuAppId">FEISHU_APP_ID</label>
+          <input id="feishuAppId" type="text" placeholder="cli_xxx">
+        </div>
+
+        <div class="field">
+          <label for="feishuAppSecret">FEISHU_APP_SECRET</label>
+          <input id="feishuAppSecret" type="password" placeholder="请输入仅自用的飞书应用密钥">
+        </div>
+
+        <div class="field">
+          <label for="tableUrl">飞书表格 URL</label>
+          <input id="tableUrl" type="text" placeholder="粘贴目标飞书多维表链接">
+        </div>
+
+        <label class="checkbox">
+          <input id="uploadAssets" type="checkbox">
+          <span>上传封面和图片附件</span>
+        </label>
+
+        <label class="checkbox">
+          <input id="uploadVideo" type="checkbox">
+          <span>同时上传无水印视频附件</span>
+        </label>
+
+        <div class="actions two-columns">
+          <button id="saveSettingsBtn" class="secondary" type="button">保存配置</button>
+          <button id="validateBtn" class="secondary" type="button">验证飞书</button>
+          <button id="collectBtn" class="primary" type="button">收藏当前笔记</button>
+          <button id="clearSecretBtn" class="secondary subtle" type="button">清空密钥</button>
+        </div>
+      </section>
+
+      <section class="panel result-panel">
+        <pre id="resultBox">准备就绪</pre>
+      </section>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

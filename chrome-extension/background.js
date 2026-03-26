@@ -252,9 +252,15 @@ async function fetchBlob(url) {
   return response.blob();
 }
 
-async function uploadAttachmentFromUrl(token, appToken, url, fallbackPrefix) {
-  const blob = await fetchBlob(url);
-  const fileName = guessFileName(url, fallbackPrefix);
+// 单次上传阈值：超过此大小自动切换到分片上传
+const MULTIPART_THRESHOLD_BYTES = 20 * 1024 * 1024; // 20 MB
+// 每个分片固定 4 MB（飞书平台规定）
+const CHUNK_SIZE_BYTES = 4 * 1024 * 1024; // 4 MB
+
+/**
+ * 直接上传（适合 <= 20 MB 的文件）
+ */
+async function uploadAttachmentDirect(token, appToken, blob, fileName) {
   const form = new FormData();
   form.append("file_name", fileName);
   form.append("parent_type", "bitable_file");
@@ -274,6 +280,92 @@ async function uploadAttachmentFromUrl(token, appToken, url, fallbackPrefix) {
   if (!fileToken) {
     throw new Error("飞书附件上传后未返回 file_token");
   }
+  return fileToken;
+}
+
+/**
+ * 分片上传（适合 > 20 MB 的大文件）
+ * 流程：upload_prepare → upload_part × N → upload_finish
+ */
+async function uploadAttachmentMultipart(token, appToken, blob, fileName) {
+  // Step 1: 预上传，获取 upload_id 和分片策略
+  const prepareForm = new FormData();
+  prepareForm.append("file_name", fileName);
+  prepareForm.append("parent_type", "bitable_file");
+  prepareForm.append("parent_node", appToken);
+  prepareForm.append("size", String(blob.size));
+
+  const prepareData = await feishuRequest("https://open.feishu.cn/open-apis/drive/v1/medias/upload_prepare", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: prepareForm,
+  });
+
+  const uploadId = prepareData.data?.upload_id;
+  // 飞书建议的分片大小（通常固定 4MB），取服务端返回值，fallback 到常量
+  const blockSize = prepareData.data?.block_size || CHUNK_SIZE_BYTES;
+
+  if (!uploadId) {
+    throw new Error("分片上传预请求未返回 upload_id");
+  }
+
+  // Step 2: 逐片上传
+  const totalSize = blob.size;
+  const blockCount = Math.ceil(totalSize / blockSize);
+
+  for (let seq = 0; seq < blockCount; seq += 1) {
+    const start = seq * blockSize;
+    const end = Math.min(start + blockSize, totalSize);
+    const chunkBlob = blob.slice(start, end);
+
+    const partForm = new FormData();
+    partForm.append("upload_id", uploadId);
+    partForm.append("seq", String(seq));
+    partForm.append("size", String(chunkBlob.size));
+    partForm.append("file", chunkBlob, fileName);
+
+    await feishuRequest("https://open.feishu.cn/open-apis/drive/v1/medias/upload_part", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: partForm,
+    });
+  }
+
+  // Step 3: 通知飞书合并所有分片，完成上传
+  const finishData = await feishuRequest("https://open.feishu.cn/open-apis/drive/v1/medias/upload_finish", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      upload_id: uploadId,
+      block_num: blockCount,
+    }),
+  });
+
+  const fileToken = finishData.data?.file_token;
+  if (!fileToken) {
+    throw new Error("分片上传完成后未返回 file_token");
+  }
+  return fileToken;
+}
+
+/**
+ * 自适应上传入口：小文件走直传，大文件自动切换分片
+ */
+async function uploadAttachmentFromUrl(token, appToken, url, fallbackPrefix) {
+  const blob = await fetchBlob(url);
+  const fileName = guessFileName(url, fallbackPrefix);
+
+  const fileToken = blob.size > MULTIPART_THRESHOLD_BYTES
+    ? await uploadAttachmentMultipart(token, appToken, blob, fileName)
+    : await uploadAttachmentDirect(token, appToken, blob, fileName);
+
   return { file_token: fileToken };
 }
 

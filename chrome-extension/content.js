@@ -53,6 +53,14 @@
   function extractFromMetaFallback(targetNoteId) {
     const noteEl = document.querySelector(".note-container") || document.querySelector("#noteContainer") || document.querySelector(".note-detail") || document;
 
+    // 通过 xg-poster（视频播放器海报节点）或 video 元素来判断是否是视频笔记
+    const hasVideoPlayer = !!(
+      noteEl.querySelector("xg-poster") ||
+      noteEl.querySelector(".video-player-media") ||
+      noteEl.querySelector(".media-container xg-poster") ||
+      noteEl.querySelector("video")
+    );
+
     const title = sanitizeText(
       noteEl.querySelector("#detail-title")?.textContent ||
       noteEl.querySelector(".title")?.textContent ||
@@ -66,40 +74,43 @@
       ""
     );
     let coverUrl = pickMeta(["meta[property='og:image']", "meta[name='og:image']"]);
-    
-    // Scoped image extraction to ignore background DOM
-    const imgs = noteEl.querySelectorAll(".swiper-slide .img, .swiper-slide img, .note-scroller img");
-    let extractedImageUrls = [];
-    if (imgs.length > 0) {
-      for (const img of imgs) {
-        let url = img.currentSrc || img.src;
-        if (!url) {
-           const style = img.getAttribute("style") || "";
-           const match = style.match(/url\(['"]?(.*?)['"]?\)/);
-           if (match) url = match[1];
+
+    // 视频笔记不从 DOM 提取 imageUrls，避免将评论区表情包、贴纸等误判为笔记图片
+    let imageUrls = [];
+    if (!hasVideoPlayer) {
+      const imgs = noteEl.querySelectorAll(".swiper-slide .img, .swiper-slide img, .note-scroller img");
+      let extractedImageUrls = [];
+      if (imgs.length > 0) {
+        for (const img of imgs) {
+          let url = img.currentSrc || img.src;
+          if (!url) {
+            const style = img.getAttribute("style") || "";
+            const match = style.match(/url\(['"]?(.*?)['"]?\)/);
+            if (match) url = match[1];
+          }
+          if (url && /xhscdn|xiaohongshu/i.test(url) && !url.includes("avatar")) {
+            extractedImageUrls.push(url);
+          }
         }
-        if (url && /xhscdn|xiaohongshu/i.test(url) && !url.includes("avatar")) {
-           extractedImageUrls.push(url);
+      } else {
+        const extraImgs = noteEl.querySelectorAll(".note-content img, picture img");
+        for (const img of extraImgs) {
+          const url = img.currentSrc || img.src;
+          if (url && /xhscdn|xiaohongshu/i.test(url) && !url.includes("avatar") && !url.includes("emoji")) {
+            extractedImageUrls.push(url);
+          }
         }
       }
-    } else {
-      // 删除直接使用 document.images 的危险操作，避免在视频笔记里把所有 UI 图标、表情包识别为图片素材
-      const extraImgs = noteEl.querySelectorAll(".note-content img, picture img");
-      for (const img of extraImgs) {
-        const url = img.currentSrc || img.src;
-        if (url && /xhscdn|xiaohongshu/i.test(url) && !url.includes("avatar") && !url.includes("emoji")) {
-          extractedImageUrls.push(url);
-        }
-      }
+      imageUrls = uniqueStrings(extractedImageUrls).slice(0, 9);
     }
-    
-    const imageUrls = uniqueStrings(extractedImageUrls).slice(0, 9);
+
     if (!coverUrl && imageUrls.length > 0) {
-        coverUrl = imageUrls[0];
+      coverUrl = imageUrls[0];
     }
-    
+
     const video = noteEl.querySelector("video");
     const videoUrl = video?.currentSrc || video?.src || "";
+
     let authorText = noteEl.querySelector(".author-info .name")?.textContent || 
                      noteEl.querySelector("[class*='author']")?.textContent || 
                      pickMeta(["meta[name='author']"]);
@@ -118,6 +129,8 @@
     return {
       sourceUrl: window.location.href,
       noteId: targetNoteId,
+      // 将 DOM 侧的视频判断暴露出去，供 merge 阶段使用
+      isVideoNote: hasVideoPlayer,
       title,
       author,
       content,
@@ -236,15 +249,30 @@
 
     const fromPage = await extractFromPageContext(targetNoteId);
     const fallback = extractFromMetaFallback(targetNoteId);
+
+    // 综合两路信号判断是否是视频笔记：
+    //   主路径明确标注 "video"、有 videoUrl，或 DOM 侧检测到视频播放器节点
+    const isVideo =
+      fromPage?.noteType === "video" ||
+      !!fromPage?.videoUrl ||
+      fallback.isVideoNote;
+
+    const noteType = fromPage?.noteType || (isVideo ? "video" : "");
+
+    // 视频笔记不应将 DOM fallback 的 imageUrls 混入——那些通常来自评论区表情包等噪音
+    const imageUrls = isVideo
+      ? uniqueStrings(fromPage?.imageUrls || [])
+      : uniqueStrings([...(fromPage?.imageUrls || []), ...(fallback.imageUrls || [])]);
+
     const merged = {
       sourceUrl: window.location.href,
       noteId: targetNoteId,
-      noteType: fromPage?.noteType || "",
+      noteType,
       title: sanitizeText(fromPage?.title || fallback.title),
       author: sanitizeText(fromPage?.author || fallback.author),
       content: String(fromPage?.content || fallback.content || "").trim(),
       coverUrl: fromPage?.coverUrl || fallback.coverUrl,
-      imageUrls: uniqueStrings([...(fromPage?.imageUrls || []), ...(fallback.imageUrls || [])]),
+      imageUrls,
       videoUrl: fromPage?.videoUrl || fallback.videoUrl,
     };
 

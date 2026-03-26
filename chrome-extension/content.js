@@ -83,9 +83,14 @@
         }
       }
     } else {
-      extractedImageUrls = Array.from(document.images)
-        .map((img) => img.currentSrc || img.src)
-        .filter((src) => /xhscdn|xiaohongshu/i.test(src || "") && !src.includes("avatar"));
+      // 删除直接使用 document.images 的危险操作，避免在视频笔记里把所有 UI 图标、表情包识别为图片素材
+      const extraImgs = noteEl.querySelectorAll(".note-content img, picture img");
+      for (const img of extraImgs) {
+        const url = img.currentSrc || img.src;
+        if (url && /xhscdn|xiaohongshu/i.test(url) && !url.includes("avatar") && !url.includes("emoji")) {
+          extractedImageUrls.push(url);
+        }
+      }
     }
     
     const imageUrls = uniqueStrings(extractedImageUrls).slice(0, 9);
@@ -176,6 +181,7 @@
           const payload = {
             sourceUrl: window.location.href,
             noteId: targetNoteId,
+            noteType: noteData.type || (noteData.video ? "video" : "normal"),
             title: noteData.title || (noteData.desc ? noteData.desc.slice(0, 100) : ""),
             author: noteData.user?.nickname || "",
             content: noteData.desc || "",
@@ -233,6 +239,7 @@
     const merged = {
       sourceUrl: window.location.href,
       noteId: targetNoteId,
+      noteType: fromPage?.noteType || "",
       title: sanitizeText(fromPage?.title || fallback.title),
       author: sanitizeText(fromPage?.author || fallback.author),
       content: String(fromPage?.content || fallback.content || "").trim(),

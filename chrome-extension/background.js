@@ -309,6 +309,14 @@ function normalizeNote(note) {
   const videoUrl = String(note?.videoUrl || "").trim();
   const coverUrl = String(note?.coverUrl || imageUrls[0] || "").trim();
 
+  let rawType = note?.noteType;
+  let finalNoteType = "image";
+  if (rawType === "video" || rawType === "normal") {
+    finalNoteType = rawType === "video" ? "video" : "image";
+  } else {
+    finalNoteType = videoUrl ? "video" : "image";
+  }
+
   return {
     sourceUrl,
     noteId,
@@ -318,7 +326,7 @@ function normalizeNote(note) {
     coverUrl,
     imageUrls,
     videoUrl,
-    noteType: videoUrl ? "video" : "image",
+    noteType: finalNoteType,
   };
 }
 

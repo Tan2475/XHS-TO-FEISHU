@@ -400,14 +400,14 @@ function normalizeNote(note) {
   const imageUrls = Array.from(new Set((Array.isArray(note?.imageUrls) ? note.imageUrls : []).filter(Boolean)));
   const videoUrl = String(note?.videoUrl || "").trim();
 
-  // 如果上游有专属 coverUrl 就直接用；否则取第一张图作为封面，
-  // 此时第一张图已经充当封面，需从 imageUrls 里去掉，避免【封面】和【视频/图片】重复
+  // 处理封面与图片列表的关系，避免同一张图出现在两个字段
   const rawCoverUrl = String(note?.coverUrl || "").trim();
   let coverUrl;
   let finalImageUrls;
   if (rawCoverUrl) {
     coverUrl = rawCoverUrl;
-    finalImageUrls = imageUrls;
+    // 如果 coverUrl 也在 imageUrls 里，把它过滤掉，避免重复上传
+    finalImageUrls = imageUrls.filter((url) => url !== coverUrl);
   } else if (imageUrls.length > 0) {
     coverUrl = imageUrls[0];
     finalImageUrls = imageUrls.slice(1);

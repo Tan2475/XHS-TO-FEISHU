@@ -369,8 +369,27 @@ async function uploadAttachmentFromUrl(token, appToken, url, fallbackPrefix) {
   return { file_token: fileToken };
 }
 
-// 提取 URL 的核心路径（去掉 query 参数），用于判断是否是同一张图
+function getXhsAssetId(url) {
+  try {
+    const parsed = new URL(url);
+    if (!/xhscdn|xiaohongshu/i.test(parsed.hostname)) {
+      return '';
+    }
+    const lastSegment = parsed.pathname.split('/').filter(Boolean).at(-1) || '';
+    const assetId = lastSegment.split('!')[0];
+    return assetId || '';
+  } catch {
+    return '';
+  }
+}
+
+// 提取 URL 的稳定主键，优先使用小红书素材 ID；拿不到时再退回核心路径
 function getImageUrlKey(url) {
+  const xhsAssetId = getXhsAssetId(url);
+  if (xhsAssetId) {
+    return `xhs:${xhsAssetId}`;
+  }
+
   try {
     const parsed = new URL(url);
     // 去掉 query 和 hash，只保留 protocol + host + pathname
@@ -380,18 +399,23 @@ function getImageUrlKey(url) {
   }
 }
 
-async function uploadAttachmentList(token, appToken, urls, prefix) {
-  // 基于 URL 核心路径去重，避免同一张图因 query 参数不同而被重复上传
+function dedupeUrlsByImageKey(urls) {
   const seen = new Set();
   const uniqueUrls = [];
-  for (const url of urls) {
+  for (const rawUrl of Array.isArray(urls) ? urls : []) {
+    const url = String(rawUrl || '').trim();
     if (!url) continue;
     const key = getImageUrlKey(url);
-    if (!seen.has(key)) {
-      seen.add(key);
-      uniqueUrls.push(url);
-    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueUrls.push(url);
   }
+  return uniqueUrls;
+}
+
+async function uploadAttachmentList(token, appToken, urls, prefix) {
+  // 基于 URL 核心路径去重，避免同一张图因 query 参数不同而被重复上传
+  const uniqueUrls = dedupeUrlsByImageKey(urls);
 
   const result = [];
   for (let index = 0; index < uniqueUrls.length; index += 1) {
@@ -417,7 +441,7 @@ function normalizeNote(note) {
   }
 
   const noteId = String(note?.noteId || extractNoteId(sourceUrl) || "").trim();
-  const imageUrls = Array.from(new Set((Array.isArray(note?.imageUrls) ? note.imageUrls : []).filter(Boolean)));
+  const imageUrls = dedupeUrlsByImageKey(note?.imageUrls);
   const videoUrl = String(note?.videoUrl || "").trim();
 
   // 处理封面与图片列表的关系，避免同一张图出现在两个字段
@@ -426,11 +450,13 @@ function normalizeNote(note) {
   let finalImageUrls;
   if (rawCoverUrl) {
     coverUrl = rawCoverUrl;
-    // 如果 coverUrl 也在 imageUrls 里，把它过滤掉，避免重复上传
-    finalImageUrls = imageUrls.filter((url) => url !== coverUrl);
+    const coverKey = getImageUrlKey(coverUrl);
+    // 如果 coverUrl 也在 imageUrls 里，把同源图片都过滤掉，避免重复上传
+    finalImageUrls = imageUrls.filter((url) => getImageUrlKey(url) !== coverKey);
   } else if (imageUrls.length > 0) {
     coverUrl = imageUrls[0];
-    finalImageUrls = imageUrls.slice(1);
+    const coverKey = getImageUrlKey(coverUrl);
+    finalImageUrls = imageUrls.filter((url) => getImageUrlKey(url) !== coverKey);
   } else {
     coverUrl = "";
     finalImageUrls = [];

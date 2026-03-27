@@ -399,7 +399,22 @@ function normalizeNote(note) {
   const noteId = String(note?.noteId || extractNoteId(sourceUrl) || "").trim();
   const imageUrls = Array.from(new Set((Array.isArray(note?.imageUrls) ? note.imageUrls : []).filter(Boolean)));
   const videoUrl = String(note?.videoUrl || "").trim();
-  const coverUrl = String(note?.coverUrl || imageUrls[0] || "").trim();
+
+  // 如果上游有专属 coverUrl 就直接用；否则取第一张图作为封面，
+  // 此时第一张图已经充当封面，需从 imageUrls 里去掉，避免【封面】和【视频/图片】重复
+  const rawCoverUrl = String(note?.coverUrl || "").trim();
+  let coverUrl;
+  let finalImageUrls;
+  if (rawCoverUrl) {
+    coverUrl = rawCoverUrl;
+    finalImageUrls = imageUrls;
+  } else if (imageUrls.length > 0) {
+    coverUrl = imageUrls[0];
+    finalImageUrls = imageUrls.slice(1);
+  } else {
+    coverUrl = "";
+    finalImageUrls = [];
+  }
 
   let rawType = note?.noteType;
   let finalNoteType = "image";
@@ -416,7 +431,7 @@ function normalizeNote(note) {
     author: sanitizeText(note?.author),
     content: String(note?.content || "").trim(),
     coverUrl,
-    imageUrls,
+    imageUrls: finalImageUrls,
     videoUrl,
     noteType: finalNoteType,
   };
@@ -445,9 +460,9 @@ async function buildFieldsPayload(note, settings, token, appToken) {
       fields["视频/图片"] = await uploadAttachmentList(token, appToken, [note.videoUrl], "video");
     }
   } else {
-    const galleryUrls = note.imageUrls.slice(1);
-    if (galleryUrls.length > 0) {
-      fields["视频/图片"] = await uploadAttachmentList(token, appToken, galleryUrls, "image");
+    // 图文笔记：imageUrls 是笔记全部图片，封面已单独由 coverUrl 处理，这里全量上传
+    if (note.imageUrls.length > 0) {
+      fields["视频/图片"] = await uploadAttachmentList(token, appToken, note.imageUrls, "image");
     }
   }
 

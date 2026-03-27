@@ -369,13 +369,33 @@ async function uploadAttachmentFromUrl(token, appToken, url, fallbackPrefix) {
   return { file_token: fileToken };
 }
 
+// 提取 URL 的核心路径（去掉 query 参数），用于判断是否是同一张图
+function getImageUrlKey(url) {
+  try {
+    const parsed = new URL(url);
+    // 去掉 query 和 hash，只保留 protocol + host + pathname
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
 async function uploadAttachmentList(token, appToken, urls, prefix) {
-  const result = [];
-  for (let index = 0; index < urls.length; index += 1) {
-    const url = urls[index];
-    if (!url) {
-      continue;
+  // 基于 URL 核心路径去重，避免同一张图因 query 参数不同而被重复上传
+  const seen = new Set();
+  const uniqueUrls = [];
+  for (const url of urls) {
+    if (!url) continue;
+    const key = getImageUrlKey(url);
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueUrls.push(url);
     }
+  }
+
+  const result = [];
+  for (let index = 0; index < uniqueUrls.length; index += 1) {
+    const url = uniqueUrls[index];
     try {
       result.push(await uploadAttachmentFromUrl(token, appToken, url, `${prefix}-${index + 1}`));
     } catch (error) {

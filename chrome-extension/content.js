@@ -165,12 +165,26 @@
 
       // 使用外置 inject.js（通过 src 注入），避免 inline script 被 CSP 拦截
       // 参数通过 dataset 传入，inject.js 读取 document.currentScript.dataset
+      const injectUrl = chrome.runtime.getURL("inject.js");
+      if (!injectUrl || injectUrl.includes("chrome-extension://invalid/")) {
+        // 扩展上下文失效或 URL 生成失败，降级到 DOM 提取
+        window.clearTimeout(timer);
+        window.removeEventListener("message", onMessage);
+        resolve(null);
+        return;
+      }
+
       const script = document.createElement("script");
-      script.src = chrome.runtime.getURL("inject.js");
+      script.src = injectUrl;
       script.dataset.requestId = requestId;
       script.dataset.noteId = targetNoteId;
-      script.onload = () => script.remove();
-      script.onerror = () => {
+      script.onload = () => {
+        // 脚本执行是同步的，但 postMessage 是异步的
+        // 给 100ms 让 inject.js 完成 postMessage，然后清理
+        setTimeout(() => script.remove(), 100);
+      };
+      script.onerror = (err) => {
+        console.warn("[XHS-Feishu] inject.js 加载失败:", injectUrl, err);
         script.remove();
         window.clearTimeout(timer);
         window.removeEventListener("message", onMessage);
